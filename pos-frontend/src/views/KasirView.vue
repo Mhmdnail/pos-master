@@ -228,7 +228,7 @@ const pendingGrandTotal = ref(0)
 const categories = computed(() => productStore.categories)
 
 const filteredProducts = computed(() => {
-  let list = productStore.products.filter(p => p.active && !p.is_bundle)
+  let list = productStore.products.filter(p => p.active != 0 && !p.is_bundle)
   if (selectedCat.value) list = list.filter(p => p.category_id === selectedCat.value)
   if (search.value)      list = list.filter(p => p.name.toLowerCase().includes(search.value.toLowerCase()))
   return list
