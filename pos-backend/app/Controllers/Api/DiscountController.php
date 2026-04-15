@@ -95,7 +95,7 @@ class DiscountController extends BaseApiController
     }
 
     // POST /api/v1/discounts/validate — cek voucher code saja
-    public function validate()
+    public function validateVoucher()
     {
         $json = $this->request->getJSON(true) ?? [];
         $code = $json['code'] ?? '';
@@ -114,7 +114,7 @@ class DiscountController extends BaseApiController
     }
 
     // POST /api/v1/discounts/calculate — preview kalkulasi diskon
-    public function calculate()
+    public function calculateDiscount()
     {
         $json     = $this->request->getJSON(true) ?? [];
         $items    = $json['items'] ?? [];

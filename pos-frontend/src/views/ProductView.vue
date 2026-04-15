@@ -7,17 +7,33 @@
   </div>
 
   <div class="card">
-    <div style="display:flex;gap:8px;margin-bottom:16px;">
-      <input v-model="search" class="form-input" placeholder="Cari produk..." style="width:240px;" />
-      <select v-model="catFilter" class="form-select" style="width:200px;">
+    <!-- Filter bar — DITAMBAHKAN checkbox showInactive -->
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+      <input v-model="search" class="form-input" placeholder="Cari produk..." style="width:220px;" />
+      <select v-model="catFilter" class="form-select" style="width:190px;">
         <option value="">Semua Kategori</option>
         <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
       </select>
+      <!-- Toggle produk nonaktif -->
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;
+                    background:#FEF3C7;border:1px solid #F59E0B;padding:6px 12px;
+                    border-radius:6px;white-space:nowrap;">
+        <input type="checkbox" v-model="showInactive" />
+        Tampilkan nonaktif
+      </label>
+      <!-- Counter info -->
+      <span style="font-size:12px;color:#9CA3AF;margin-left:auto;">
+        {{ filtered.length }} produk ditampilkan
+        <template v-if="!showInactive && inactiveCount > 0">
+          · <span style="color:#EF9F27;">{{ inactiveCount }} nonaktif tersembunyi</span>
+        </template>
+      </span>
     </div>
 
     <div v-if="loading" style="text-align:center;padding:40px;"><span class="spinner"></span></div>
     <div v-else-if="error" style="background:#FEE2E2;color:#991B1B;padding:12px;border-radius:6px;font-size:13px;margin-bottom:12px;">
-      {{ error }} <button @click="load" style="text-decoration:underline;background:none;border:none;cursor:pointer;color:#991B1B;">Coba lagi</button>
+      {{ error }}
+      <button @click="load" style="text-decoration:underline;background:none;border:none;cursor:pointer;color:#991B1B;">Coba lagi</button>
     </div>
     <table v-else class="table">
       <thead>
@@ -27,17 +43,28 @@
         </tr>
       </thead>
       <tbody>
-        <tr v-for="p in filtered" :key="p.id">
+        <tr v-for="p in filtered" :key="p.id"
+            :style="parseInt(p.active) === 0 ? 'opacity:0.55;background:#FFF9F0;' : ''">
           <td><code style="font-size:11px;background:#F3F4F6;padding:2px 6px;border-radius:4px;">{{ p.code }}</code></td>
           <td style="font-weight:500;">{{ p.name }}</td>
           <td style="color:#6B7280;">{{ p.category_name }}</td>
           <td class="text-right">{{ formatRp(p.base_price) }}</td>
-          <td><span :class="p.has_bom ? 'badge badge-green' : 'badge badge-gray'">{{ p.has_bom ? 'Ya' : '-' }}</span></td>
-          <td><span :class="p.active ? 'badge badge-green' : 'badge badge-red'">{{ p.active ? 'Aktif' : 'Nonaktif' }}</span></td>
+          <td>
+            <span :class="parseInt(p.has_bom) ? 'badge badge-green' : 'badge badge-gray'">
+              {{ parseInt(p.has_bom) ? 'Ya' : '-' }}
+            </span>
+          </td>
+          <td>
+            <span :class="parseInt(p.active) === 1 ? 'badge badge-green' : 'badge badge-red'">
+              {{ parseInt(p.active) === 1 ? 'Aktif' : 'Nonaktif' }}
+            </span>
+          </td>
           <td><button class="btn btn-outline btn-sm" @click="openEdit(p)">Edit</button></td>
         </tr>
         <tr v-if="!loading && !filtered.length">
-          <td colspan="7" class="text-center text-muted" style="padding:30px;">Tidak ada produk</td>
+          <td colspan="7" class="text-center text-muted" style="padding:30px;">
+            {{ showInactive ? 'Tidak ada produk' : 'Tidak ada produk aktif' }}
+          </td>
         </tr>
       </tbody>
     </table>
@@ -75,9 +102,11 @@
         <label class="form-label">Harga Jual (Rp) *</label>
         <input v-model.number="form.base_price" class="form-input" type="number" min="0" placeholder="0" />
       </div>
-      <div class="form-group" style="display:flex;align-items:center;gap:12px;padding-top:20px;">
+      <div class="form-group" style="display:flex;align-items:center;padding-top:20px;">
+        <!-- Checkbox aktif pakai boolean murni -->
         <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
-          <input type="checkbox" v-model="form.active" :true-value="1" :false-value="0" /> Aktif
+          <input type="checkbox" v-model="form.activeFlag" />
+          Aktif
         </label>
       </div>
     </div>
@@ -93,22 +122,27 @@
         <div style="font-size:13px;font-weight:600;">Resep Bahan Baku (BOM)</div>
         <button class="btn btn-outline btn-sm" type="button" @click="addBomLine">+ Bahan</button>
       </div>
-      <div v-if="bomLines.length === 0" style="font-size:12px;color:#9CA3AF;">Belum ada bahan baku — klik "+ Bahan" untuk menambahkan</div>
-      <div v-for="(line, i) in bomLines" :key="i" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+      <div v-if="bomLines.length === 0" style="font-size:12px;color:#9CA3AF;">
+        Belum ada bahan baku — klik "+ Bahan" untuk menambahkan
+      </div>
+      <div v-for="(line, i) in bomLines" :key="i"
+           style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
         <select v-model="line.material_id" class="form-select" style="flex:2;font-size:12px;">
           <option value="">-- Pilih bahan --</option>
           <option v-for="m in materials" :key="m.id" :value="m.id">{{ m.name }} ({{ m.unit }})</option>
         </select>
-        <input v-model.number="line.qty_required" class="form-input" type="number" min="0.01" step="0.01"
-               placeholder="Qty" style="width:80px;font-size:12px;" />
+        <input v-model.number="line.qty_required" class="form-input" type="number"
+               min="0.01" step="0.01" placeholder="Qty" style="width:80px;font-size:12px;" />
         <span style="font-size:11px;color:#9CA3AF;min-width:36px;">
           {{ materials.find(m => m.id === line.material_id)?.unit || '' }}
         </span>
-        <button @click="removeBomLine(i)" style="background:none;border:none;cursor:pointer;color:#E24B4A;font-size:16px;padding:0;">✕</button>
+        <button @click="removeBomLine(i)"
+                style="background:none;border:none;cursor:pointer;color:#E24B4A;font-size:16px;padding:0;">✕</button>
       </div>
     </div>
 
-    <div v-if="formError" style="background:#FEE2E2;color:#991B1B;padding:10px;border-radius:6px;font-size:13px;margin-bottom:12px;">
+    <div v-if="formError"
+         style="background:#FEE2E2;color:#991B1B;padding:10px;border-radius:6px;font-size:13px;margin-bottom:12px;">
       {{ formError }}
     </div>
 
@@ -128,43 +162,66 @@ import { ref, computed, onMounted } from 'vue'
 import AppLayout from '@/layouts/AppLayout.vue'
 import { productApi, categoryApi, materialApi } from '@/services/api'
 
-const products   = ref([])
-const categories = ref([])
-const materials  = ref([])
-const loading    = ref(false)
-const error      = ref('')
-const search     = ref('')
-const catFilter  = ref('')
-const showForm   = ref(false)
-const saving     = ref(false)
-const formError  = ref('')
-const bomLines   = ref([])
+const products     = ref([])
+const categories   = ref([])
+const materials    = ref([])
+const loading      = ref(false)
+const error        = ref('')
+const search       = ref('')
+const catFilter    = ref('')
+const showForm     = ref(false)
+const saving       = ref(false)
+const formError    = ref('')
+const bomLines     = ref([])
+const showInactive = ref(false)
 
 function defaultForm() {
-  return { id: null, name: '', sku: '', category_id: '', base_price: 0, description: '', active: 1 }
+  return {
+    id: null, name: '', sku: '', category_id: '',
+    base_price: 0, description: '',
+    activeFlag: true,  // boolean murni untuk checkbox
+  }
 }
 const form = ref(defaultForm())
 
+// Hitung produk nonaktif untuk info counter
+const inactiveCount = computed(() =>
+  products.value.filter(p => parseInt(p.active) === 0).length
+)
+
 const filtered = computed(() => products.value.filter(p => {
-  const s = !search.value   || p.name.toLowerCase().includes(search.value.toLowerCase())
+  const s = !search.value    || p.name.toLowerCase().includes(search.value.toLowerCase())
   const c = !catFilter.value || p.category_id === catFilter.value
-  return s && c
+  const a = showInactive.value ? true : parseInt(p.active) === 1
+  return s && c && a
 }))
 
 function formatRp(v) { return 'Rp ' + Number(v || 0).toLocaleString('id-ID') }
-
-function addBomLine()    { bomLines.value.push({ material_id: '', qty_required: 0 }) }
-function removeBomLine(i){ bomLines.value.splice(i, 1) }
+function addBomLine()     { bomLines.value.push({ material_id: '', qty_required: 0 }) }
+function removeBomLine(i) { bomLines.value.splice(i, 1) }
 
 function openAdd() {
-  form.value = defaultForm(); formError.value = ''; bomLines.value = []; showForm.value = true
-}
-async function openEdit(p) {
-  form.value     = { id: p.id, name: p.name, sku: p.sku, category_id: p.category_id, base_price: p.base_price, description: p.description || '', active: p.active }
+  form.value      = defaultForm()
   formError.value = ''
   bomLines.value  = []
   showForm.value  = true
-  // Load BOM existing
+}
+
+async function openEdit(p) {
+  form.value = {
+    id:          p.id,
+    name:        p.name,
+    sku:         p.sku,
+    category_id: p.category_id,
+    base_price:  p.base_price,
+    description: p.description || '',
+    activeFlag:  parseInt(p.active) === 1,  // konversi ke boolean
+  }
+  formError.value = ''
+  bomLines.value  = []
+  showForm.value  = true
+
+  // Load BOM existing di background
   try {
     const { data } = await productApi.show(p.id)
     if (data.data?.recipe?.lines) {
@@ -188,11 +245,20 @@ async function save() {
   saving.value    = true
   formError.value = ''
   try {
-    const payload = { ...form.value }
+    // Konversi boolean activeFlag → integer active untuk API
+    const payload = {
+      name:        form.value.name,
+      sku:         form.value.sku,
+      category_id: form.value.category_id,
+      base_price:  form.value.base_price,
+      description: form.value.description || null,
+      active:      form.value.activeFlag ? 1 : 0,
+    }
     if (bomLines.value.length > 0) {
-      payload.recipe = { name: 'Default', lines: bomLines.value }
+      payload.recipe  = { name: 'Default', lines: bomLines.value }
       payload.has_bom = 1
     }
+
     if (form.value.id) {
       await productApi.update(form.value.id, payload)
     } else {

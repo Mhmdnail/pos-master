@@ -75,8 +75,8 @@ $routes->group('api/v1', ['namespace' => 'App\Controllers\Api'], static function
         $routes->get('discounts/(:segment)',            'DiscountController::show/$1');
         $routes->put('discounts/(:segment)',            'DiscountController::update/$1');
         $routes->delete('discounts/(:segment)',         'DiscountController::delete/$1');
-        $routes->post('discounts/validate',             'DiscountController::validate'); // cek voucher
-        $routes->post('discounts/calculate',            'DiscountController::calculate'); // hitung diskon untuk order
+        $routes->post('discounts/validate',             'DiscountController::validateVoucher'); // cek voucher
+        $routes->post('discounts/calculate',            'DiscountController::calculateDiscount'); // hitung diskon untuk order
 
         // ----------------------------------------------------------
         // Inventory & Bahan Baku

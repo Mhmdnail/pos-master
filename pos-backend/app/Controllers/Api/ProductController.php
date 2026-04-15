@@ -25,7 +25,7 @@ class ProductController extends BaseApiController
         $category  = $this->request->getGet('category_id');
         $search    = $this->request->getGet('search');
 
-        $builder = $this->model->withCategory()->forOutlet($outletId)->where('products.active',1);
+        $builder = $this->model->withCategory()->forOutlet($outletId);
         if ($category) $builder->where('products.category_id', $category);
         if ($search)   $builder->groupStart()->like('products.name',$search)->orLike('products.sku',$search)->groupEnd();
 

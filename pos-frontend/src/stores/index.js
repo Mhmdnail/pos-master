@@ -44,7 +44,7 @@ export const useAuthStore = defineStore('auth', {
   }
 })
 
-// ── HELPER: ekstrak array dari berbagai format response ──────────
+// ── HELPER ──────────────────────────────────────────────────────
 function extractList(responseData) {
   const d = responseData?.data
   if (!d) return []
@@ -59,18 +59,20 @@ export const useCartStore = defineStore('cart', {
   state: () => ({
     items:          [],
     customer:       null,
-    voucherCode:    '',
-    voucherApplied: null,
     orderType:      'dine_in',
     tableNumber:    '',
     paymentMethod:  'cash',
+    // Voucher state — HARUS di-reset setelah setiap transaksi selesai
+    voucherCode:    '',
+    voucherApplied: null,   // { code, discount_name, amount } — info voucher yang sudah valid
     discount:       { total: 0, logs: [] },
   }),
   getters: {
-    subtotal:   s => s.items.reduce((sum, i) => sum + i.unit_price * i.qty, 0),
-    grandTotal: s => Math.max(0, s.subtotal - s.discount.total),
-    itemCount:  s => s.items.reduce((sum, i) => sum + i.qty, 0),
-    isEmpty:    s => s.items.length === 0,
+    subtotal:        s => s.items.reduce((sum, i) => sum + i.unit_price * i.qty, 0),
+    grandTotal:      s => Math.max(0, s.subtotal - s.discount.total),
+    itemCount:       s => s.items.reduce((sum, i) => sum + i.qty, 0),
+    isEmpty:         s => s.items.length === 0,
+    hasVoucher:      s => !!s.voucherApplied,
   },
   actions: {
     addItem(product, qty = 1, modifiers = []) {
@@ -99,26 +101,48 @@ export const useCartStore = defineStore('cart', {
       const item = this.items.find(i => i._key === key)
       if (item) item.qty = qty
     },
-    setDiscount(result) { this.discount = result },
+
+    // Set hasil kalkulasi diskon
+    setDiscount(result, voucherCode = '') {
+      this.discount = result
+      // Simpan info voucher yang sudah di-apply untuk ditampilkan
+      if (voucherCode && result.logs?.length) {
+        this.voucherApplied = {
+          code:   voucherCode,
+          logs:   result.logs,
+          total:  result.discount_total,
+        }
+      }
+    },
+
+    // Clear HANYA bagian voucher/diskon (tanpa clear item)
     clearDiscount() {
       this.discount       = { total: 0, logs: [] }
       this.voucherCode    = ''
       this.voucherApplied = null
     },
+
+    // Clear SEMUA setelah transaksi selesai — termasuk voucher
     clear() {
       this.items          = []
       this.customer       = null
-      this.voucherCode    = ''
-      this.voucherApplied = null
       this.tableNumber    = ''
       this.discount       = { total: 0, logs: [] }
+      // PENTING: voucher wajib di-clear setelah transaksi selesai
+      // supaya transaksi berikutnya tidak otomatis dapat diskon yang sama
+      this.voucherCode    = ''
+      this.voucherApplied = null
+      // paymentMethod dan orderType sengaja TIDAK di-reset
+      // supaya kasir tidak perlu re-set pilihan setiap order
     },
+
     toOrderPayload() {
       return {
         customer_id:    this.customer?.id || null,
         order_type:     this.orderType,
         table_number:   this.tableNumber || null,
-        voucher_code:   this.voucherCode || null,
+        // Kirim voucher code hanya jika sudah di-apply dan tervalidasi
+        voucher_code:   this.voucherApplied?.code || null,
         payment_method: this.paymentMethod,
         notes:          null,
         items: this.items.map(i => ({
@@ -154,7 +178,7 @@ export const useProductStore = defineStore('product', {
         this.products   = extractList(prodRes.data)
       } catch (e) {
         this.error = e.response?.data?.message || e.message || 'Gagal memuat produk'
-        console.error('ProductStore loadAll error:', e)
+        console.error('ProductStore error:', e)
       } finally {
         this.loading = false
       }

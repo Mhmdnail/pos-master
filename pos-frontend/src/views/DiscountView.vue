@@ -9,7 +9,8 @@
   <div class="card">
     <div v-if="loading" style="text-align:center;padding:40px;"><span class="spinner"></span></div>
     <div v-else-if="error" style="background:#FEE2E2;color:#991B1B;padding:12px;border-radius:6px;font-size:13px;">
-      {{ error }} <button @click="load" style="text-decoration:underline;background:none;border:none;cursor:pointer;color:#991B1B;">Coba lagi</button>
+      {{ error }}
+      <button @click="load" style="text-decoration:underline;background:none;border:none;cursor:pointer;color:#991B1B;">Coba lagi</button>
     </div>
     <table v-else class="table">
       <thead>
@@ -24,10 +25,15 @@
           <td style="font-weight:500;">{{ d.name }}</td>
           <td><span class="badge badge-gray" style="font-size:11px;">{{ d.type }}</span></td>
           <td style="font-weight:600;">{{ d.type === 'percentage' ? d.value + '%' : formatRp(d.value) }}</td>
-          <td><code v-if="d.code" style="font-size:11px;background:#EDE9FE;color:#5B21B6;padding:2px 6px;border-radius:4px;">{{ d.code }}</code><span v-else style="color:#9CA3AF;">-</span></td>
+          <td>
+            <code v-if="d.code" style="font-size:11px;background:#EDE9FE;color:#5B21B6;padding:2px 6px;border-radius:4px;">{{ d.code }}</code>
+            <span v-else style="color:#9CA3AF;">-</span>
+          </td>
           <td style="text-align:center;font-weight:600;">{{ d.priority }}</td>
           <td style="text-align:center;">
-            <span :class="d.is_stackable ? 'badge badge-green' : 'badge badge-gray'">{{ d.is_stackable ? 'Ya' : 'Tidak' }}</span>
+            <span :class="toInt(d.is_stackable) ? 'badge badge-green' : 'badge badge-gray'">
+              {{ toInt(d.is_stackable) ? 'Ya' : 'Tidak' }}
+            </span>
           </td>
           <td style="font-size:11px;color:#6B7280;">
             <template v-if="d.valid_from || d.valid_until">
@@ -36,7 +42,11 @@
             </template>
             <span v-else style="color:#9CA3AF;">Selalu aktif</span>
           </td>
-          <td><span :class="d.active ? 'badge badge-green' : 'badge badge-red'">{{ d.active ? 'Aktif' : 'Nonaktif' }}</span></td>
+          <td>
+            <span :class="toInt(d.active) ? 'badge badge-green' : 'badge badge-red'">
+              {{ toInt(d.active) ? 'Aktif' : 'Nonaktif' }}
+            </span>
+          </td>
           <td><button class="btn btn-outline btn-sm" @click="openEdit(d)">Edit</button></td>
         </tr>
         <tr v-if="!loading && !discounts.length">
@@ -105,19 +115,23 @@
       </div>
     </div>
 
+    <!-- Checkboxes — pakai boolean murni, bukan 0/1 -->
     <div style="display:flex;gap:20px;margin-bottom:16px;flex-wrap:wrap;">
       <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
-        <input type="checkbox" v-model="form.is_stackable" /> Bisa digabung (stackable)
+        <input type="checkbox" v-model="form.is_stackable" />
+        Bisa digabung (stackable)
       </label>
       <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
-        <input type="checkbox" v-model="form.require_member" /> Khusus member
+        <input type="checkbox" v-model="form.require_member" />
+        Khusus member
       </label>
       <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
-        <input type="checkbox" v-model="form.active" :true-value="1" :false-value="0" /> Aktif
+        <input type="checkbox" v-model="form.active" />
+        Aktif
       </label>
     </div>
 
-    <!-- Rules ringkas -->
+    <!-- Rules opsional -->
     <div style="background:#F9FAFB;border-radius:6px;padding:12px;margin-bottom:16px;">
       <div style="font-size:12px;font-weight:500;color:#6B7280;margin-bottom:8px;">Aturan berlaku (opsional)</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
@@ -132,7 +146,8 @@
       </div>
       <div style="margin-top:8px;">
         <label class="form-label" style="font-size:11px;">Min. total belanja (Rp)</label>
-        <input v-model.number="ruleMinAmount" class="form-input" type="number" min="0" placeholder="0 = tidak ada minimum" style="font-size:12px;" />
+        <input v-model.number="ruleMinAmount" class="form-input" type="number" min="0"
+               placeholder="0 = tidak ada minimum" style="font-size:12px;" />
       </div>
     </div>
 
@@ -156,44 +171,60 @@ import { ref, onMounted } from 'vue'
 import AppLayout from '@/layouts/AppLayout.vue'
 import api from '@/services/api'
 
-const discounts  = ref([])
-const loading    = ref(false)
-const error      = ref('')
-const saving     = ref(false)
-const showForm   = ref(false)
-const formError  = ref('')
-const ruleTime   = ref({ start: '', end: '' })
+const discounts     = ref([])
+const loading       = ref(false)
+const error         = ref('')
+const saving        = ref(false)
+const showForm      = ref(false)
+const formError     = ref('')
+const ruleTime      = ref({ start: '', end: '' })
 const ruleMinAmount = ref(0)
 
+// Helper: paksa jadi integer untuk display badge
+function toInt(val) { return parseInt(val) === 1 }
+
+function formatRp(v) { return 'Rp ' + Number(v || 0).toLocaleString('id-ID') }
+function formatDate(dt) {
+  if (!dt) return ''
+  return new Date(dt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+// Default form pakai boolean murni — konsisten dengan v-model checkbox
 function defaultForm() {
   return {
     id: null, name: '', type: 'percentage', value: 0,
     max_cap: null, priority: 0, code: '',
     valid_from: '', valid_until: '',
-    is_stackable: false, require_member: false, active: 1
+    is_stackable:   false,
+    require_member: false,
+    active:         true,   // boolean, bukan integer
   }
 }
 const form = ref(defaultForm())
 
-function formatRp(v) { return 'Rp ' + Number(v || 0).toLocaleString('id-ID') }
-function formatDate(dt) {
-  if (!dt) return ''
-  return new Date(dt).toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' })
+function openAdd() {
+  form.value          = defaultForm()
+  formError.value     = ''
+  ruleTime.value      = { start: '', end: '' }
+  ruleMinAmount.value = 0
+  showForm.value      = true
 }
 
-function openAdd() {
-  form.value      = defaultForm()
-  formError.value = ''
-  ruleTime.value  = { start: '', end: '' }
-  ruleMinAmount.value = 0
-  showForm.value  = true
-}
 function openEdit(d) {
-  form.value      = { ...d, code: d.code || '' }
-  formError.value = ''
-  ruleTime.value  = { start: '', end: '' }
+  // Konversi semua nilai dari API (bisa string "0"/"1") ke boolean untuk checkbox
+  form.value = {
+    ...d,
+    code:           d.code || '',
+    valid_from:     d.valid_from  || '',
+    valid_until:    d.valid_until || '',
+    active:         parseInt(d.active)         === 1,
+    is_stackable:   parseInt(d.is_stackable)   === 1,
+    require_member: parseInt(d.require_member) === 1,
+  }
+  formError.value     = ''
+  ruleTime.value      = { start: '', end: '' }
   ruleMinAmount.value = 0
-  showForm.value  = true
+  showForm.value      = true
 }
 
 async function save() {
@@ -203,13 +234,18 @@ async function save() {
   saving.value    = true
   formError.value = ''
   try {
-    const payload = { ...form.value }
+    // Konversi boolean kembali ke integer untuk API
+    const payload = {
+      ...form.value,
+      active:         form.value.active         ? 1 : 0,
+      is_stackable:   form.value.is_stackable   ? 1 : 0,
+      require_member: form.value.require_member ? 1 : 0,
+    }
     if (!payload.valid_from)  delete payload.valid_from
     if (!payload.valid_until) delete payload.valid_until
     if (!payload.max_cap)     payload.max_cap = null
     if (!payload.code)        payload.code    = null
 
-    // Tambahkan rules jika ada
     const rules = []
     if (ruleTime.value.start && ruleTime.value.end) {
       rules.push({ rule_type: 'time_range', rule_value: { start: ruleTime.value.start, end: ruleTime.value.end } })
