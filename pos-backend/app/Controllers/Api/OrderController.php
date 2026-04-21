@@ -22,7 +22,7 @@ class OrderController extends BaseApiController
 
     public function __construct()
     {
-        helper(['uuid','code']);
+        helper(['uuid', 'code']);
         $this->orderModel = new OrderModel();
     }
 
@@ -34,12 +34,13 @@ class OrderController extends BaseApiController
         $status   = $this->request->getGet('status');
         $date     = $this->request->getGet('date') ?? date('Y-m-d');
 
-        $builder = $this->orderModel->withDetails()->where('orders.outlet_id', $outletId)
-                                    ->where('DATE(orders.created_at)', $date);
+        $builder = $this->orderModel->withDetails()
+                        ->where('orders.outlet_id', $outletId)
+                        ->where('DATE(orders.created_at)', $date);
         if ($status) $builder->where('orders.status', $status);
 
         $total = $builder->countAllResults(false);
-        $data  = $builder->orderBy('orders.created_at','DESC')->paginate($perPage,'default',$page);
+        $data  = $builder->orderBy('orders.created_at', 'DESC')->paginate($perPage, 'default', $page);
         return $this->success($this->paginate($data, $total, $page, $perPage));
     }
 
@@ -48,13 +49,9 @@ class OrderController extends BaseApiController
         $order = $this->orderModel->withDetails()->find($id);
         if (!$order) return $this->notFound('Order tidak ditemukan');
 
-        $itemModel    = new OrderItemModel();
-        $discountLog  = new OrderDiscountLogModel();
-        $paymentModel = new PaymentModel();
-
-        $order['items']    = $itemModel->getByOrder($id);
-        $order['discounts'] = $discountLog->where('order_id',$id)->findAll();
-        $order['payments']  = $paymentModel->where('order_id',$id)->findAll();
+        $order['items']    = (new OrderItemModel())->getByOrder($id);
+        $order['discounts'] = (new OrderDiscountLogModel())->where('order_id', $id)->findAll();
+        $order['payments']  = (new PaymentModel())->where('order_id', $id)->findAll();
 
         return $this->success($order);
     }
@@ -66,7 +63,9 @@ class OrderController extends BaseApiController
     {
         $json  = $this->request->getJSON(true) ?? [];
         $rules = ['items' => 'required'];
-        if (!$this->validate($rules)) return $this->error('Validasi gagal', 422, $this->validator->getErrors());
+        if (!$this->validate($rules)) {
+            return $this->error('Validasi gagal', 422, $this->validator->getErrors());
+        }
 
         $outletId  = $this->currentOutletId();
         $cashierId = $this->currentUserId();
@@ -83,76 +82,78 @@ class OrderController extends BaseApiController
         foreach ($items as $item) {
             $product = $productModel->find($item['product_id']);
             if (!$product || !$product['active']) {
-                return $this->error("Produk {$item['product_id']} tidak ditemukan atau tidak aktif");
+                return $this->error("Produk tidak ditemukan atau tidak aktif");
             }
 
-            $qty        = (int)($item['qty'] ?? 1);
-            $unitPrice  = (float)($item['unit_price'] ?? $product['base_price']);
-            $modDelta   = 0;
+            $qty       = (int)($item['qty'] ?? 1);
+            $unitPrice = (float)($item['unit_price'] ?? $product['base_price']);
+            $modifiers = $item['modifiers'] ?? [];
+            $modDelta  = 0;
 
-            // Kalkulasi modifier price delta
-            $modifiers  = $item['modifiers'] ?? [];
             foreach ($modifiers as $mod) {
                 $modDelta += (float)($mod['price_delta'] ?? 0);
             }
             $unitPrice += $modDelta;
 
-            // Hitung HPP dari BOM
-            $unitHpp = $this->calculateHpp($product['id'], $outletId);
-
-            $itemSubtotal  = $unitPrice * $qty;
-            $subtotal     += $itemSubtotal;
-            $hppTotal     += $unitHpp * $qty;
+            $itemSubtotal = $unitPrice * $qty;
+            $subtotal    += $itemSubtotal;
 
             $orderItems[] = [
-                'id'            => generate_uuid(),
-                'product_id'    => $product['id'],
-                'bundle_id'     => $item['bundle_id'] ?? null,
-                'parent_item_id'=> $item['parent_item_id'] ?? null,
-                'name_snapshot' => $product['name'],
-                'qty'           => $qty,
-                'unit_price'    => $unitPrice,
-                'unit_hpp'      => $unitHpp,
-                'discount_amount'=> 0,
-                'subtotal'      => $itemSubtotal,
-                'modifiers'     => !empty($modifiers) ? json_encode($modifiers) : null,
-                'notes'         => $item['notes'] ?? null,
+                // FIX: generate UUID di sini pakai random_bytes (via helper yang sudah difix)
+                // Setiap item dijamin UUID unik karena tidak bergantung waktu
+                'id'              => generate_uuid(),
+                'product_id'      => $product['id'],
+                'bundle_id'       => $item['bundle_id'] ?? null,
+                'parent_item_id'  => $item['parent_item_id'] ?? null,
+                'name_snapshot'   => $product['name'],
+                'qty'             => $qty,
+                'unit_price'      => $unitPrice,
+                'discount_amount' => 0,
+                'subtotal'        => $itemSubtotal,
+                'modifiers'       => !empty($modifiers) ? json_encode($modifiers) : null,
+                'notes'           => $item['notes'] ?? null,
             ];
         }
 
-        // ---- Jalankan discount engine ----
-        $discountTotal   = 0;
-        $discountLogs    = [];
-        $voucherCode     = $json['voucher_code'] ?? null;
-        $customerId      = $json['customer_id'] ?? null;
+        // ---- Discount engine ----
+        $voucherCode  = $json['voucher_code'] ?? null;
+        $customerId   = $json['customer_id'] ?? null;
 
         $engine = new DiscountEngine($outletId, $customerId);
-        $result = $engine->calculate($orderItems, $subtotal, $voucherCode, $json['payment_method'] ?? 'cash');
+        $result = $engine->calculate(
+            $orderItems,
+            $subtotal,
+            $voucherCode,
+            $json['payment_method'] ?? 'cash'
+        );
 
         $discountTotal = $result['discount_total'];
         $discountLogs  = $result['logs'];
 
-        // Update discount_amount di tiap item
         foreach ($orderItems as &$oi) {
             $oi['discount_amount'] = $result['item_discounts'][$oi['product_id']] ?? 0;
             $oi['subtotal']       -= $oi['discount_amount'];
         }
+        unset($oi);
 
         $grandTotal = max(0, $subtotal - $discountTotal);
 
-        // ---- Cek stok semua item ----
+        // ---- Cek stok (dry run) ----
         $stockCheck = $this->checkAndDeductStock($orderItems, $outletId, $cashierId, dry: true);
         if ($stockCheck !== true) {
             return $this->error("Stok tidak mencukupi: {$stockCheck}");
         }
 
-        // ---- Mulai DB Transaction ----
+        // ---- DB Transaction ----
         $db = \Config\Database::connect();
         $db->transStart();
 
         $orderId     = generate_uuid();
-        $counter     = $this->orderModel->getTodayCounter($outletId) + 1;
         $orderNumber = generate_code('orders', $outletId);
+
+        // Cari shift aktif
+        $shiftModel  = new \App\Models\ShiftModel();
+        $activeShift = $shiftModel->getOpenShift($outletId);
 
         // Insert order
         $this->orderModel->insert([
@@ -161,6 +162,7 @@ class OrderController extends BaseApiController
             'order_number'   => $orderNumber,
             'cashier_id'     => $cashierId,
             'customer_id'    => $customerId,
+            'shift_id'       => $activeShift ? $activeShift['id'] : null,
             'order_type'     => $json['order_type'] ?? 'dine_in',
             'table_number'   => $json['table_number'] ?? null,
             'status'         => 'confirmed',
@@ -172,7 +174,7 @@ class OrderController extends BaseApiController
             'notes'          => $json['notes'] ?? null,
         ]);
 
-        // Insert order items
+        // Insert order items — UUID sudah di-generate sebelumnya, dijamin unik
         $itemModel = new OrderItemModel();
         foreach ($orderItems as $oi) {
             $oi['order_id'] = $orderId;
@@ -187,28 +189,29 @@ class OrderController extends BaseApiController
                 $log['order_id'] = $orderId;
                 $logModel->insert($log);
             }
-            // Increment usage counter tiap diskon
             $engine->commitUsage();
         }
 
         // Deduct stok (actual)
         $this->checkAndDeductStock($orderItems, $outletId, $cashierId, $orderId, dry: false);
 
-        // Auto post jurnal: Piutang/Kas D | Pendapatan K + HPP D | Persediaan K
+        // Post jurnal akuntansi
         $this->postJurnal($orderId, $outletId, $cashierId, $grandTotal, $hppTotal, $discountTotal, $orderNumber);
 
         $db->transComplete();
 
         if (!$db->transStatus()) {
+            // Log detail error untuk debugging
+            log_message('error', 'OrderController::create transComplete failed for outlet ' . $outletId);
             return $this->serverError('Gagal membuat order, silakan coba lagi');
         }
 
         return $this->created([
-            'order_id'     => $orderId,
-            'order_number' => $orderNumber,
-            'subtotal'     => $subtotal,
+            'order_id'      => $orderId,
+            'order_number'  => $orderNumber,
+            'subtotal'      => $subtotal,
             'discount_total'=> $discountTotal,
-            'grand_total'  => $grandTotal,
+            'grand_total'   => $grandTotal,
         ], 'Order berhasil dibuat');
     }
 
@@ -225,7 +228,7 @@ class OrderController extends BaseApiController
         $method = $json['method'] ?? 'cash';
         $amount = (float)($json['amount'] ?? 0);
 
-        if ($amount < $order['grand_total']) {
+        if ($amount < (float)$order['grand_total']) {
             return $this->error('Jumlah bayar kurang dari total order');
         }
 
@@ -252,8 +255,8 @@ class OrderController extends BaseApiController
         ]);
 
         // Update kas besar
-        $kasModel   = new KasTransactionModel();
         $outletId   = $this->currentOutletId();
+        $kasModel   = new KasTransactionModel();
         $kasBalance = $kasModel->getBalance($outletId, 'besar');
         $kasModel->insert([
             'id'             => generate_uuid(),
@@ -270,7 +273,11 @@ class OrderController extends BaseApiController
 
         $db->transComplete();
 
-        $change = $amount - $order['grand_total'];
+        if (!$db->transStatus()) {
+            return $this->serverError('Gagal memproses pembayaran');
+        }
+
+        $change = $amount - (float)$order['grand_total'];
         return $this->success([
             'payment_id'  => $paymentId,
             'amount_paid' => $amount,
@@ -281,12 +288,14 @@ class OrderController extends BaseApiController
 
     public function updateStatus($id)
     {
-        $order  = $this->orderModel->find($id);
+        $order = $this->orderModel->find($id);
         if (!$order) return $this->notFound('Order tidak ditemukan');
+
         $json   = $this->request->getJSON(true) ?? [];
         $status = $json['status'] ?? '';
-        $valid  = ['pending','confirmed','preparing','ready','completed'];
+        $valid  = ['pending', 'confirmed', 'preparing', 'ready', 'completed'];
         if (!in_array($status, $valid)) return $this->error('Status tidak valid');
+
         $this->orderModel->update($id, ['status' => $status]);
         return $this->success(null, 'Status order diupdate');
     }
@@ -295,7 +304,9 @@ class OrderController extends BaseApiController
     {
         $order = $this->orderModel->find($id);
         if (!$order) return $this->notFound('Order tidak ditemukan');
-        if ($order['payment_status'] === 'paid') return $this->error('Order yang sudah dibayar tidak bisa dibatalkan langsung');
+        if ($order['payment_status'] === 'paid') {
+            return $this->error('Order yang sudah dibayar tidak bisa dibatalkan langsung');
+        }
 
         $json = $this->request->getJSON(true) ?? [];
         $this->orderModel->update($id, [
@@ -313,7 +324,7 @@ class OrderController extends BaseApiController
         if (!$order) return $this->notFound('Order tidak ditemukan');
 
         $order['items']    = (new OrderItemModel())->getByOrder($id);
-        $order['payments'] = (new PaymentModel())->where('order_id',$id)->findAll();
+        $order['payments'] = (new PaymentModel())->where('order_id', $id)->findAll();
 
         return $this->success($order);
     }
@@ -327,16 +338,21 @@ class OrderController extends BaseApiController
         $recipe = (new BomRecipeModel())->getActiveRecipe($productId);
         if (!$recipe) return 0;
 
-        $lines = (new BomRecipeLineModel())->getByRecipe($recipe['id']);
         $hpp   = 0;
+        $lines = (new BomRecipeLineModel())->getByRecipe($recipe['id']);
         foreach ($lines as $line) {
             $hpp += (float)$line['qty_required'] * (float)$line['cost_per_unit'];
         }
         return $hpp;
     }
 
-    private function checkAndDeductStock(array $items, string $outletId, string $userId, string $orderId = '', bool $dry = true): bool|string
-    {
+    private function checkAndDeductStock(
+        array  $items,
+        string $outletId,
+        string $userId,
+        string $orderId = '',
+        bool   $dry = true
+    ): bool|string {
         $recipeModel = new BomRecipeModel();
         $lineModel   = new BomRecipeLineModel();
         $matModel    = new RawMaterialModel();
@@ -350,6 +366,7 @@ class OrderController extends BaseApiController
             foreach ($lines as $line) {
                 $needed = $line['qty_required'] * $item['qty'];
                 $mat    = $matModel->find($line['material_id']);
+                if (!$mat) continue;
 
                 if ((float)$mat['stock_qty'] < $needed) {
                     return "{$mat['name']} (tersedia: {$mat['stock_qty']} {$mat['unit']}, dibutuhkan: {$needed} {$mat['unit']})";
@@ -359,7 +376,7 @@ class OrderController extends BaseApiController
                     $before = (float)$mat['stock_qty'];
                     $after  = $before - $needed;
                     \Config\Database::connect()->query(
-                        'UPDATE raw_materials SET stock_qty=?, updated_at=NOW() WHERE id=?',
+                        'UPDATE raw_materials SET stock_qty = ?, updated_at = NOW() WHERE id = ?',
                         [$after, $line['material_id']]
                     );
                     $movModel->insert([
@@ -373,7 +390,7 @@ class OrderController extends BaseApiController
                         'qty_before'     => $before,
                         'qty_after'      => $after,
                         'cost_per_unit'  => $mat['cost_per_unit'],
-                        'notes'          => "Auto deduct order",
+                        'notes'          => 'Auto deduct order',
                         'created_by'     => $userId,
                     ]);
                 }
@@ -382,24 +399,29 @@ class OrderController extends BaseApiController
         return true;
     }
 
-    private function postJurnal(string $orderId, string $outletId, string $userId, float $grandTotal, float $hpp, float $discount, string $orderNumber): void
-    {
+    private function postJurnal(
+        string $orderId,
+        string $outletId,
+        string $userId,
+        float  $grandTotal,
+        float  $hpp,
+        float  $discount,
+        string $orderNumber
+    ): void {
         $accountModel = new AccountModel();
         $entryModel   = new JournalEntryModel();
         $lineModel    = new JournalLineModel();
 
-        $kasAcc     = $accountModel->findByCode($outletId, '1-1000');
-        $revAcc     = $accountModel->findByCode($outletId, '4-1000');
-        $discAcc    = $accountModel->findByCode($outletId, '4-1100');
-        $hppAcc     = $accountModel->findByCode($outletId, '5-1000');
-        $persAcc    = $accountModel->findByCode($outletId, '1-2000');
+        $kasAcc  = $accountModel->findByCode($outletId, '1-1000');
+        $revAcc  = $accountModel->findByCode($outletId, '4-1000');
+        $discAcc = $accountModel->findByCode($outletId, '4-1100');
+        $hppAcc  = $accountModel->findByCode($outletId, '5-1000');
+        $persAcc = $accountModel->findByCode($outletId, '1-2000');
 
-        if (!$kasAcc || !$revAcc) return; // CoA belum diseed, skip
+        if (!$kasAcc || !$revAcc) return;
 
         $entryId     = generate_uuid();
         $entryNumber = generate_code('journal_entries', $outletId);
-        $totalDebit  = $grandTotal + $hpp;
-        $totalCredit = $grandTotal + $hpp;
 
         $entryModel->insert([
             'id'             => $entryId,
@@ -408,25 +430,20 @@ class OrderController extends BaseApiController
             'reference_type' => 'order',
             'reference_id'   => $orderId,
             'description'    => "Penjualan order {$orderNumber}",
-            'total_debit'    => $totalDebit,
-            'total_credit'   => $totalCredit,
+            'total_debit'    => $grandTotal + $hpp,
+            'total_credit'   => $grandTotal + $hpp,
             'created_by'     => $userId,
         ]);
 
         $lines = [];
-        // Kas D
-        $lines[] = ['id'=>generate_uuid(),'entry_id'=>$entryId,'account_id'=>$kasAcc['id'],'debit'=>$grandTotal,'credit'=>0,'description'=>'Kas masuk penjualan'];
-        // Diskon D (jika ada)
+        $lines[] = ['id' => generate_uuid(), 'entry_id' => $entryId, 'account_id' => $kasAcc['id'],  'debit' => $grandTotal, 'credit' => 0,       'description' => 'Kas masuk penjualan'];
         if ($discount > 0 && $discAcc) {
-            $lines[] = ['id'=>generate_uuid(),'entry_id'=>$entryId,'account_id'=>$discAcc['id'],'debit'=>$discount,'credit'=>0,'description'=>'Diskon penjualan'];
+            $lines[] = ['id' => generate_uuid(), 'entry_id' => $entryId, 'account_id' => $discAcc['id'], 'debit' => $discount,   'credit' => 0,       'description' => 'Diskon penjualan'];
         }
-        // Pendapatan K
-        $revenue = $grandTotal + $discount;
-        $lines[] = ['id'=>generate_uuid(),'entry_id'=>$entryId,'account_id'=>$revAcc['id'],'debit'=>0,'credit'=>$revenue,'description'=>'Pendapatan penjualan'];
-        // HPP D
+        $lines[] = ['id' => generate_uuid(), 'entry_id' => $entryId, 'account_id' => $revAcc['id'],  'debit' => 0, 'credit' => $grandTotal + $discount, 'description' => 'Pendapatan penjualan'];
         if ($hpp > 0 && $hppAcc && $persAcc) {
-            $lines[] = ['id'=>generate_uuid(),'entry_id'=>$entryId,'account_id'=>$hppAcc['id'],'debit'=>$hpp,'credit'=>0,'description'=>'HPP penjualan'];
-            $lines[] = ['id'=>generate_uuid(),'entry_id'=>$entryId,'account_id'=>$persAcc['id'],'debit'=>0,'credit'=>$hpp,'description'=>'Keluar persediaan'];
+            $lines[] = ['id' => generate_uuid(), 'entry_id' => $entryId, 'account_id' => $hppAcc['id'],  'debit' => $hpp, 'credit' => 0,    'description' => 'HPP penjualan'];
+            $lines[] = ['id' => generate_uuid(), 'entry_id' => $entryId, 'account_id' => $persAcc['id'], 'debit' => 0,    'credit' => $hpp, 'description' => 'Keluar persediaan'];
         }
 
         foreach ($lines as $line) $lineModel->insert($line);

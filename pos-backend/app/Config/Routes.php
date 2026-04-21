@@ -168,6 +168,19 @@ $routes->group('api/v1', ['namespace' => 'App\Controllers\Api'], static function
         $routes->get('users/(:segment)',   'UserController::show/$1');
         $routes->put('users/(:segment)',   'UserController::update/$1');
         $routes->patch('users/(:segment)/toggle', 'UserController::toggle/$1');
+
+        // ----------------------------------------------------------
+        // SHIFT KASIR
+        // ----------------------------------------------------------
+        $routes->get('shifts',                      'ShiftController::index');
+        $routes->get('shifts/active',               'ShiftController::active');
+        $routes->get('shifts/(:segment)',            'ShiftController::show/$1');
+        $routes->post('shifts/open',                 'ShiftController::open');
+        $routes->post('shifts/(:segment)/close',     'ShiftController::close/$1');
+        $routes->get('shifts/(:segment)/zreport',    'ShiftController::zreport/$1');
+
+        // User roles
+        $routes->get('roles', 'UserController::roles');
     });
 });
 

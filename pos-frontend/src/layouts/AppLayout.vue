@@ -39,10 +39,12 @@ const user   = computed(() => auth.user)
 const menu = [
   { to:'/',          icon:'⬛', label:'Kasir'    },
   { to:'/orders',    icon:'📋', label:'Riwayat'  },
+  { to:'/shifts',   icon:'🕐', label:'Shift'   },
   { to:'/products',  icon:'☕', label:'Produk'   },
   { to:'/materials', icon:'🌾', label:'Bahan'    },
   { to:'/discounts', icon:'%',  label:'Diskon'   },
   { to:'/reports',   icon:'📊', label:'Laporan'  },
+  { to:'/users',    icon:'👤', label:'User'    },
 ]
 
 async function logout() {

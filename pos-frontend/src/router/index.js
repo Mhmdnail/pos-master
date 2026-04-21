@@ -9,6 +9,8 @@ const routes = [
   { path: '/orders',   name: 'Orders',   component: () => import('@/views/OrderView.vue'),    meta: { auth: true   } },
   { path: '/reports',  name: 'Reports',  component: () => import('@/views/ReportView.vue'),   meta: { auth: true   } },
   { path: '/discounts',name: 'Discounts',component: () => import('@/views/DiscountView.vue'), meta: { auth: true   } },
+  { path: '/shifts', name: 'Shifts', component: () => import('@/views/ShiftView.vue'), meta: { auth: true } },
+  { path: '/users',  name: 'Users',  component: () => import('@/views/UserView.vue'),  meta: { auth: true } },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 

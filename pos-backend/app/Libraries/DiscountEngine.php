@@ -128,20 +128,24 @@ class DiscountEngine
             return false;
         }
 
-        // ── Validasi per-customer limit ──────────────────────────
-        // Untuk diskon VOUCHER (punya code): cek berapa kali customer ini
-        // sudah pakai voucher yang sama. Default limit = 1x per customer.
-        if ($disc['code']) {
-            $usedByCustomer = $this->countUsageByCustomer($disc['id'], $this->customerId);
-            $limit = $disc['per_customer_limit'] ?? 1;  // default 1x per customer
-            if ($usedByCustomer >= $limit) {
+        // ── Validasi diskon bertipe VOUCHER (punya code) ─────────
+        // Aturan ketat:
+        //   1. Diskon yang punya code WAJIB di-trigger lewat input kode eksplisit
+        //   2. Tanpa input kode → diskon berkode tidak pernah berlaku otomatis
+        //   3. Kode harus cocok persis (case-insensitive)
+        if (!empty($disc['code'])) {
+            // Tidak ada kode yang diinput → langsung tolak
+            if (empty($requestedVoucherCode)) {
                 return false;
             }
-
-            // Kalau diskon ini punya code tapi code yang diminta berbeda, skip
-            if ($requestedVoucherCode && strtoupper($disc['code']) !== strtoupper($requestedVoucherCode)) {
-                // Diskon ini voucher tapi bukan yang diminta — skip untuk daftar auto
-                // Hanya allow kalau memang tidak ada voucher yang diminta (auto discount)
+            // Kode tidak cocok → tolak
+            if (strtoupper(trim($disc['code'])) !== strtoupper(trim($requestedVoucherCode))) {
+                return false;
+            }
+            // Kode cocok — cek per-customer limit
+            $usedByCustomer = $this->countUsageByCustomer($disc['id'], $this->customerId);
+            $limit          = (int)($disc['per_customer_limit'] ?? 1); // default 1x per customer
+            if ($usedByCustomer >= $limit) {
                 return false;
             }
         }

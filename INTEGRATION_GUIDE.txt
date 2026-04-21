@@ -1,0 +1,63 @@
+// =============================================================================
+// 1. UPDATE pos-frontend/src/router/index.js
+//    Tambahkan dua route baru di dalam array routes
+// =============================================================================
+
+// Tambahkan ini di dalam array routes:
+// { path: '/shifts', name: 'Shifts', component: () => import('@/views/ShiftView.vue'), meta: { auth: true } },
+// { path: '/users',  name: 'Users',  component: () => import('@/views/UserView.vue'),  meta: { auth: true } },
+
+
+// =============================================================================
+// 2. UPDATE pos-frontend/src/layouts/AppLayout.vue
+//    Tambahkan dua item menu baru di dalam array menu
+// =============================================================================
+
+// Ubah array menu menjadi:
+/*
+const menu = [
+  { to:'/',         icon:'⬛', label:'Kasir'   },
+  { to:'/orders',   icon:'📋', label:'Riwayat' },
+  { to:'/shifts',   icon:'🕐', label:'Shift'   },   // <-- TAMBAHKAN
+  { to:'/products', icon:'☕', label:'Produk'  },
+  { to:'/materials',icon:'🌾', label:'Bahan'   },
+  { to:'/discounts',icon:'%',  label:'Diskon'  },
+  { to:'/reports',  icon:'📊', label:'Laporan' },
+  { to:'/users',    icon:'👤', label:'User'    },   // <-- TAMBAHKAN
+]
+*/
+
+
+// =============================================================================
+// 3. UPDATE pos-backend/app/Config/Routes.php
+//    Tambahkan routes baru di dalam group protected (filter: auth)
+// =============================================================================
+
+/*
+// Shift kasir
+$routes->get('shifts',                    'ShiftController::index');
+$routes->get('shifts/active',             'ShiftController::active');
+$routes->get('shifts/(:segment)',          'ShiftController::show/$1');
+$routes->post('shifts/open',               'ShiftController::open');
+$routes->post('shifts/(:segment)/close',   'ShiftController::close/$1');
+$routes->get('shifts/(:segment)/zreport',  'ShiftController::zreport/$1');
+
+// User roles
+$routes->get('roles', 'UserController::roles');
+*/
+
+
+// =============================================================================
+// 4. UPDATE pos-backend/app/Controllers/Api/OrderController.php
+//    Di dalam fungsi create(), setelah baris $orderId = generate_uuid();
+//    Tambahkan inject shift_id ke order
+// =============================================================================
+
+/*
+// Cari shift aktif
+$shiftModel  = new \App\Models\ShiftModel();
+$activeShift = $shiftModel->getOpenShift($outletId);
+
+// Kemudian di bagian insert order, tambahkan:
+'shift_id' => $activeShift ? $activeShift['id'] : null,
+*/
