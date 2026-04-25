@@ -99,8 +99,6 @@ class OrderController extends BaseApiController
             $subtotal    += $itemSubtotal;
 
             $orderItems[] = [
-                // FIX: generate UUID di sini pakai random_bytes (via helper yang sudah difix)
-                // Setiap item dijamin UUID unik karena tidak bergantung waktu
                 'id'              => generate_uuid(),
                 'product_id'      => $product['id'],
                 'bundle_id'       => $item['bundle_id'] ?? null,
@@ -115,9 +113,9 @@ class OrderController extends BaseApiController
             ];
         }
 
-        // ---- Discount engine ----
-        $voucherCode  = $json['voucher_code'] ?? null;
-        $customerId   = $json['customer_id'] ?? null;
+        // ---- Jalankan discount engine (voucher + diskon otomatis) ----
+        $voucherCode = $json['voucher_code'] ?? null;
+        $customerId  = $json['customer_id']  ?? null;
 
         $engine = new DiscountEngine($outletId, $customerId);
         $result = $engine->calculate(
@@ -130,6 +128,7 @@ class OrderController extends BaseApiController
         $discountTotal = $result['discount_total'];
         $discountLogs  = $result['logs'];
 
+        // Update discount_amount per item
         foreach ($orderItems as &$oi) {
             $oi['discount_amount'] = $result['item_discounts'][$oi['product_id']] ?? 0;
             $oi['subtotal']       -= $oi['discount_amount'];
@@ -137,6 +136,41 @@ class OrderController extends BaseApiController
         unset($oi);
 
         $grandTotal = max(0, $subtotal - $discountTotal);
+
+        // ---- Diskon manual dari kasir ----
+        // Frontend menghitung nilainya, backend memvalidasi dan mencatat ke log
+        $manualDiscAmount = (float)($json['manual_discount_amount'] ?? 0);
+        $manualDiscType   = $json['manual_discount_type']  ?? null;
+        $manualDiscValue  = (float)($json['manual_discount_value'] ?? 0);
+
+        if ($manualDiscAmount > 0) {
+            // Validasi: tidak boleh melebihi grand total setelah diskon engine
+            $manualDiscAmount = min($manualDiscAmount, $grandTotal);
+
+            // Hitung ulang di backend sebagai safety (jangan percaya frontend mentah)
+            if ($manualDiscType === 'pct' && $manualDiscValue > 0) {
+                $pct = min((float)$manualDiscValue, 100);
+                $manualDiscAmount = round($grandTotal * $pct / 100, 2);
+            } elseif ($manualDiscType === 'rp') {
+                $manualDiscAmount = min((float)$manualDiscValue, $grandTotal);
+            }
+
+            $discountTotal += $manualDiscAmount;
+            $grandTotal     = max(0, $grandTotal - $manualDiscAmount);
+
+            // Catat ke discount logs sebagai entry tersendiri
+            $label = 'Diskon Manual';
+            if ($manualDiscType === 'pct' && $manualDiscValue > 0) {
+                $label .= " ({$manualDiscValue}%)";
+            }
+            $discountLogs[] = [
+                'discount_id'   => null,
+                'discount_name' => $label,
+                'discount_code' => null,
+                'applied_to'    => 'order',
+                'amount'        => round($manualDiscAmount, 2),
+            ];
+        }
 
         // ---- Cek stok (dry run) ----
         $stockCheck = $this->checkAndDeductStock($orderItems, $outletId, $cashierId, dry: true);
@@ -151,7 +185,6 @@ class OrderController extends BaseApiController
         $orderId     = generate_uuid();
         $orderNumber = generate_code('orders', $outletId);
 
-        // Cari shift aktif
         $shiftModel  = new \App\Models\ShiftModel();
         $activeShift = $shiftModel->getOpenShift($outletId);
 
@@ -174,14 +207,14 @@ class OrderController extends BaseApiController
             'notes'          => $json['notes'] ?? null,
         ]);
 
-        // Insert order items — UUID sudah di-generate sebelumnya, dijamin unik
+        // Insert order items
         $itemModel = new OrderItemModel();
         foreach ($orderItems as $oi) {
             $oi['order_id'] = $orderId;
             $itemModel->insert($oi);
         }
 
-        // Insert discount logs
+        // Insert semua discount logs (engine + manual)
         if (!empty($discountLogs)) {
             $logModel = new OrderDiscountLogModel();
             foreach ($discountLogs as $log) {
@@ -189,6 +222,7 @@ class OrderController extends BaseApiController
                 $log['order_id'] = $orderId;
                 $logModel->insert($log);
             }
+            // Increment usage counter hanya untuk diskon dari engine (bukan manual)
             $engine->commitUsage();
         }
 
@@ -201,17 +235,16 @@ class OrderController extends BaseApiController
         $db->transComplete();
 
         if (!$db->transStatus()) {
-            // Log detail error untuk debugging
             log_message('error', 'OrderController::create transComplete failed for outlet ' . $outletId);
             return $this->serverError('Gagal membuat order, silakan coba lagi');
         }
 
         return $this->created([
-            'order_id'      => $orderId,
-            'order_number'  => $orderNumber,
-            'subtotal'      => $subtotal,
-            'discount_total'=> $discountTotal,
-            'grand_total'   => $grandTotal,
+            'order_id'       => $orderId,
+            'order_number'   => $orderNumber,
+            'subtotal'       => $subtotal,
+            'discount_total' => $discountTotal,
+            'grand_total'    => $grandTotal,
         ], 'Order berhasil dibuat');
     }
 
@@ -240,7 +273,7 @@ class OrderController extends BaseApiController
             'id'           => $paymentId,
             'order_id'     => $orderId,
             'method'       => $method,
-            'provider'     => $json['provider'] ?? null,
+            'provider'     => $json['provider']     ?? null,
             'reference_no' => $json['reference_no'] ?? null,
             'amount'       => $amount,
             'fee'          => $json['fee'] ?? 0,
@@ -436,14 +469,39 @@ class OrderController extends BaseApiController
         ]);
 
         $lines = [];
-        $lines[] = ['id' => generate_uuid(), 'entry_id' => $entryId, 'account_id' => $kasAcc['id'],  'debit' => $grandTotal, 'credit' => 0,       'description' => 'Kas masuk penjualan'];
+        $lines[] = [
+            'id' => generate_uuid(), 'entry_id' => $entryId,
+            'account_id' => $kasAcc['id'],
+            'debit' => $grandTotal, 'credit' => 0,
+            'description' => 'Kas masuk penjualan',
+        ];
         if ($discount > 0 && $discAcc) {
-            $lines[] = ['id' => generate_uuid(), 'entry_id' => $entryId, 'account_id' => $discAcc['id'], 'debit' => $discount,   'credit' => 0,       'description' => 'Diskon penjualan'];
+            $lines[] = [
+                'id' => generate_uuid(), 'entry_id' => $entryId,
+                'account_id' => $discAcc['id'],
+                'debit' => $discount, 'credit' => 0,
+                'description' => 'Diskon penjualan',
+            ];
         }
-        $lines[] = ['id' => generate_uuid(), 'entry_id' => $entryId, 'account_id' => $revAcc['id'],  'debit' => 0, 'credit' => $grandTotal + $discount, 'description' => 'Pendapatan penjualan'];
+        $lines[] = [
+            'id' => generate_uuid(), 'entry_id' => $entryId,
+            'account_id' => $revAcc['id'],
+            'debit' => 0, 'credit' => $grandTotal + $discount,
+            'description' => 'Pendapatan penjualan',
+        ];
         if ($hpp > 0 && $hppAcc && $persAcc) {
-            $lines[] = ['id' => generate_uuid(), 'entry_id' => $entryId, 'account_id' => $hppAcc['id'],  'debit' => $hpp, 'credit' => 0,    'description' => 'HPP penjualan'];
-            $lines[] = ['id' => generate_uuid(), 'entry_id' => $entryId, 'account_id' => $persAcc['id'], 'debit' => 0,    'credit' => $hpp, 'description' => 'Keluar persediaan'];
+            $lines[] = [
+                'id' => generate_uuid(), 'entry_id' => $entryId,
+                'account_id' => $hppAcc['id'],
+                'debit' => $hpp, 'credit' => 0,
+                'description' => 'HPP penjualan',
+            ];
+            $lines[] = [
+                'id' => generate_uuid(), 'entry_id' => $entryId,
+                'account_id' => $persAcc['id'],
+                'debit' => 0, 'credit' => $hpp,
+                'description' => 'Keluar persediaan',
+            ];
         }
 
         foreach ($lines as $line) $lineModel->insert($line);
