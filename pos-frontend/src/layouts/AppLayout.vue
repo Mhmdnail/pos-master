@@ -44,6 +44,7 @@ const menu = [
   { to:'/materials', icon:'🌾', label:'Bahan'    },
   { to:'/discounts', icon:'%',  label:'Diskon'   },
   { to:'/reports',   icon:'📊', label:'Laporan'  },
+  { to:'/kas-kecil', icon:'💵', label:'Kas Kecil' },
   { to:'/users',    icon:'👤', label:'User'    },
 ]
 

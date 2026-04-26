@@ -181,6 +181,13 @@ $routes->group('api/v1', ['namespace' => 'App\Controllers\Api'], static function
 
         // User roles
         $routes->get('roles', 'UserController::roles');
+
+        // Kas Kecil (Petty Cash)
+        $routes->get('kas-kecil',                    'KasKecilController::index');
+        $routes->get('kas-kecil/summary',            'KasKecilController::summary');
+        $routes->get('kas-kecil/categories',         'KasKecilController::categories');
+        $routes->post('kas-kecil',                   'KasKecilController::create');
+        $routes->delete('kas-kecil/(:segment)',       'KasKecilController::delete/$1');
     });
 });
 

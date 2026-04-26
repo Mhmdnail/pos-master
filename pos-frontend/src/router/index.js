@@ -12,6 +12,7 @@ const routes = [
   { path: '/shifts', name: 'Shifts', component: () => import('@/views/ShiftView.vue'), meta: { auth: true } },
   { path: '/users',  name: 'Users',  component: () => import('@/views/UserView.vue'),  meta: { auth: true } },
   { path: '/:pathMatch(.*)*', redirect: '/' },
+  { path: '/kas-kecil', name: 'KasKecil', component: () => import('@/views/KasKecilView.vue'), meta: { auth: true } },
 ]
 
 const router = createRouter({
