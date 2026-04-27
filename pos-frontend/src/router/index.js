@@ -13,6 +13,8 @@ const routes = [
   { path: '/users',  name: 'Users',  component: () => import('@/views/UserView.vue'),  meta: { auth: true } },
   { path: '/:pathMatch(.*)*', redirect: '/' },
   { path: '/kas-kecil', name: 'KasKecil', component: () => import('@/views/KasKecilView.vue'), meta: { auth: true } },
+  { path: '/suppliers',       name: 'Suppliers', component: () => import('@/views/SupplierView.vue'),       meta: { auth: true } },
+  { path: '/purchase-orders', name: 'PO',        component: () => import('@/views/PurchaseOrderView.vue'), meta: { auth: true } },
 ]
 
 const router = createRouter({

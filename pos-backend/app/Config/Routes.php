@@ -188,6 +188,21 @@ $routes->group('api/v1', ['namespace' => 'App\Controllers\Api'], static function
         $routes->get('kas-kecil/categories',         'KasKecilController::categories');
         $routes->post('kas-kecil',                   'KasKecilController::create');
         $routes->delete('kas-kecil/(:segment)',       'KasKecilController::delete/$1');
+
+        // Supplier
+        $routes->get('suppliers',                    'SupplierController::index');
+        $routes->post('suppliers',                   'SupplierController::create');
+        $routes->get('suppliers/(:segment)',          'SupplierController::show/$1');
+        $routes->put('suppliers/(:segment)',          'SupplierController::update/$1');
+        $routes->patch('suppliers/(:segment)/toggle', 'SupplierController::toggle/$1');
+
+        // Purchase Order
+        $routes->get('purchase-orders',                      'PurchaseOrderController::index');
+        $routes->post('purchase-orders',                     'PurchaseOrderController::create');
+        $routes->get('purchase-orders/(:segment)',            'PurchaseOrderController::show/$1');
+        $routes->put('purchase-orders/(:segment)',            'PurchaseOrderController::update/$1');
+        $routes->post('purchase-orders/(:segment)/receive',  'PurchaseOrderController::receive/$1');
+        $routes->post('purchase-orders/(:segment)/cancel',   'PurchaseOrderController::cancel/$1');
     });
 });
 

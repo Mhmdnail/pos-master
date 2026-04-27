@@ -45,6 +45,8 @@ const menu = [
   { to:'/discounts', icon:'%',  label:'Diskon'   },
   { to:'/reports',   icon:'📊', label:'Laporan'  },
   { to:'/kas-kecil', icon:'💵', label:'Kas Kecil' },
+  { to:'/suppliers',       icon:'🏭', label:'Supplier' },
+  { to:'/purchase-orders', icon:'📦', label:'Purchase' },
   { to:'/users',    icon:'👤', label:'User'    },
 ]
 

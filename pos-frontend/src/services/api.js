@@ -117,3 +117,31 @@ export const userApi = {
   toggle: id        => api.patch(`/users/${id}/toggle`),
   roles:  ()        => api.get('/roles'),
 }
+
+// ── Kas Kecil Management ────────────────────────────────────────────
+export const kasKecilApi = {
+  list:       params => api.get('/kas-kecil', { params }),
+  summary:    params => api.get('/kas-kecil/summary', { params }),
+  categories: ()     => api.get('/kas-kecil/categories'),
+  create:     data   => api.post('/kas-kecil', data),
+  delete:     id     => api.delete(`/kas-kecil/${id}`),
+}
+
+// ── Supplier ────────────────────────────────────────────
+export const supplierApi = {
+  list:   params   => api.get('/suppliers', { params }),
+  show:   id       => api.get(`/suppliers/${id}`),
+  create: data     => api.post('/suppliers', data),
+  update: (id, d)  => api.put(`/suppliers/${id}`, d),
+  toggle: id       => api.patch(`/suppliers/${id}/toggle`),
+}
+
+// ── PO ────────────────────────────────────────────
+export const poApi = {
+  list:    params   => api.get('/purchase-orders', { params }),
+  show:    id       => api.get(`/purchase-orders/${id}`),
+  create:  data     => api.post('/purchase-orders', data),
+  update:  (id, d)  => api.put(`/purchase-orders/${id}`, d),
+  receive: (id, d)  => api.post(`/purchase-orders/${id}/receive`, d),
+  cancel:  id       => api.post(`/purchase-orders/${id}/cancel`),
+}
